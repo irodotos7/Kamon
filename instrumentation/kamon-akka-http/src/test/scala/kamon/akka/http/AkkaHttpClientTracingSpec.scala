@@ -20,7 +20,7 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpRequest
 import akka.http.scaladsl.model.headers.RawHeader
-import akka.stream.ActorMaterializer
+import akka.stream.{Materializer, ActorMaterializer}
 import kamon.Kamon
 import kamon.tag.Lookups.{plain, plainBoolean, plainLong}
 import kamon.testkit._
@@ -32,15 +32,16 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.OptionValues
 
 import scala.concurrent.duration._
+import scala.concurrent.ExecutionContextExecutor
 
 class AkkaHttpClientTracingSpec extends AnyWordSpecLike with Matchers with InitAndStopKamonAfterAll with MetricInspection.Syntax
     with Reconfigure with TestWebServer with Eventually with OptionValues with TestSpanReporter {
 
   import TestWebServer.Endpoints._
 
-  implicit private val system = ActorSystem("http-client-instrumentation-spec")
-  implicit private val executor = system.dispatcher
-  implicit private val materializer = ActorMaterializer()
+  implicit private val system: ActorSystem = ActorSystem("http-client-instrumentation-spec")
+  implicit private val executor: ExecutionContextExecutor  = system.dispatcher
+  implicit private val materializer: Materializer = ActorMaterializer()
 
   val timeoutTest: FiniteDuration = 5 second
   val interface = "127.0.0.1"

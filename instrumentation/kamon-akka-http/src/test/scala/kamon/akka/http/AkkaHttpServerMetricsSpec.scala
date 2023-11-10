@@ -20,7 +20,7 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpRequest, HttpResponse}
 import akka.http.scaladsl.settings.ClientConnectionSettings
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, Materializer}
 import akka.stream.scaladsl.{Sink, Source}
 import kamon.instrumentation.http.HttpServerMetrics
 import kamon.testkit._
@@ -31,15 +31,16 @@ import org.scalatest.OptionValues
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.concurrent.ExecutionContextExecutor
 
 class AkkaHttpServerMetricsSpec extends AnyWordSpecLike with Matchers with InitAndStopKamonAfterAll with InstrumentInspection.Syntax
   with Reconfigure with TestWebServer with Eventually with OptionValues {
 
   import TestWebServer.Endpoints._
 
-  implicit private val system = ActorSystem("http-server-metrics-instrumentation-spec")
-  implicit private val executor = system.dispatcher
-  implicit private val materializer = ActorMaterializer()
+  implicit private val system: ActorSystem = ActorSystem("http-server-metrics-instrumentation-spec")
+  implicit private val executor: ExecutionContextExecutor = system.dispatcher
+  implicit private val materializer: Materializer = ActorMaterializer()
 
   val port = 8083
   val interface = "127.0.0.1"

@@ -465,31 +465,45 @@ lazy val `kamon-akka` = (project in file("instrumentation/kamon-akka"))
 
 def akkaHttpVersion(scalaVersion: String) = scalaVersion match {
   case "2.11" => "10.1.12"
-  case _      => "10.2.8"
+  case "2.12"      => "10.2.8"
+  case "2.13"      => "10.2.10"
+  case _ => "10.2.10"
+}
+
+def akkaStreamVersion(scalaVersion: String) = scalaVersion match {
+  case "2.11" => "2.5.32"
+  case "2.12"      => "2.5.32"
+  case "2.13"      => "2.5.32"
+  case _ => "2.6.21"
 }
 
 lazy val `kamon-akka-http` = (project in file("instrumentation/kamon-akka-http"))
   .enablePlugins(JavaAgent)
   .disablePlugins(AssemblyPlugin)
   .settings(instrumentationSettings)
+  .settings(crossScalaVersions += `scala_3_version`)
   .settings(Seq(
     resolvers += Resolver.bintrayRepo("hseeberger", "maven"),
     javaAgents += "org.mortbay.jetty.alpn" % "jetty-alpn-agent" % "2.0.10" % "test",
     libraryDependencies ++= Seq(
       kanelaAgent % "provided",
-      "com.typesafe.akka" %% "akka-http"            % akkaHttpVersion(scalaBinaryVersion.value) % "provided",
-      "com.typesafe.akka" %% "akka-http2-support"   % akkaHttpVersion(scalaBinaryVersion.value)  % "provided",
-      "com.typesafe.akka" %% "akka-stream"          % "2.5.32" % "provided",
+      ("com.typesafe.akka" %% "akka-http"            % akkaHttpVersion(scalaBinaryVersion.value) % "provided")
+      .cross(CrossVersion.for3Use2_13),
+      ("com.typesafe.akka" %% "akka-http2-support"   % akkaHttpVersion(scalaBinaryVersion.value)  % "provided")
+      .cross(CrossVersion.for3Use2_13),
+      ("com.typesafe.akka" %% "akka-stream"          % akkaStreamVersion(scalaBinaryVersion.value) % "provided")
+        .cross(CrossVersion.for3Use2_13),
 
       scalatest % "test",
       slf4jApi % "test",
       slf4jnop % "test",
       okHttp % "test",
-      "com.typesafe.akka" %% "akka-http-testkit"    % akkaHttpVersion(scalaBinaryVersion.value) % "test",
-      "de.heikoseeberger" %% "akka-http-json4s"     % "1.27.0" % "test",
-      "org.json4s"        %% "json4s-native"        % "3.6.7" % "test",
+      ("com.typesafe.akka" %% "akka-http-testkit"    % akkaHttpVersion(scalaBinaryVersion.value) % "test")
+        .cross(CrossVersion.for3Use2_13),
+      ("de.heikoseeberger" %% "akka-http-json4s"     % "1.27.0" % "test").cross(CrossVersion.for3Use2_13),
+      ("org.json4s"        %% "json4s-native"        % "3.6.7" % "test").cross(CrossVersion.for3Use2_13),
     ),
-  )).dependsOn(`kamon-akka`, `kamon-testkit` % "test")
+  )).dependsOn(`kamon-akka` % "compile,common,akka-2.5,akka-2.6", `kamon-testkit` % "test,test-common,test-akka-2.5,test-akka-2.6")
 
 
 

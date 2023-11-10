@@ -27,27 +27,27 @@ import akka.http.scaladsl.model.StatusCodes.{BadRequest, InternalServerError, OK
 import akka.http.scaladsl.model.headers.{Connection, RawHeader}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{RequestContext, Route}
-import akka.stream.ActorMaterializer
+import akka.stream.{Materializer, ActorMaterializer}
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import javax.net.ssl.{KeyManagerFactory, SSLContext, SSLSocketFactory, TrustManagerFactory, X509TrustManager}
 import kamon.Kamon
 import kamon.instrumentation.akka.http.TracingDirectives
-import org.json4s.{DefaultFormats, native}
+import org.json4s.{Formats, DefaultFormats, native, Serialization}
 import kamon.tag.Lookups.plain
 import kamon.trace.Trace
 import scala.concurrent.{ExecutionContext, Future}
 
 trait TestWebServer extends TracingDirectives {
-  implicit val serialization = native.Serialization
-  implicit val formats = DefaultFormats
+  implicit val serialization: Serialization  = native.Serialization
+  implicit val formats: Formats = DefaultFormats
   import Json4sSupport._
 
   def startServer(interface: String, port: Int, https: Boolean = false)(implicit system: ActorSystem): WebServer = {
     import Endpoints._
 
     implicit val ec: ExecutionContext = system.dispatcher
-    implicit val materializer = ActorMaterializer()
+    implicit val materializer: Materializer = ActorMaterializer()
 
     val routes = logRequest("routing-request") {
       get {

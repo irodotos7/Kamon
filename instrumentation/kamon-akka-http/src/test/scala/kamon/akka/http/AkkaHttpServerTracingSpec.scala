@@ -17,7 +17,7 @@
 package kamon.akka.http
 
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
+import akka.stream.{Materializer, ActorMaterializer}
 import kamon.tag.Lookups.{plain, plainBoolean, plainLong}
 import kamon.testkit._
 import kamon.trace.Span.Mark
@@ -31,15 +31,16 @@ import java.util.UUID
 import javax.net.ssl.{HostnameVerifier, SSLSession}
 import scala.concurrent.duration._
 import scala.collection.JavaConverters._
+import scala.concurrent.ExecutionContextExecutor
 
 class AkkaHttpServerTracingSpec extends AnyWordSpecLike with Matchers with ScalaFutures with Inside with InitAndStopKamonAfterAll
     with MetricInspection.Syntax with Reconfigure with TestWebServer with Eventually with OptionValues with TestSpanReporter {
 
   import TestWebServer.Endpoints._
 
-  implicit private val system = ActorSystem("http-server-instrumentation-spec")
-  implicit private val executor = system.dispatcher
-  implicit private val materializer = ActorMaterializer()
+  implicit private val system: ActorSystem = ActorSystem("http-server-instrumentation-spec")
+  implicit private val executor: ExecutionContextExecutor = system.dispatcher
+  implicit private val materializer: Materializer = ActorMaterializer()
 
   val (sslSocketFactory, trustManager) = clientSSL()
   val okHttp = new OkHttpClient.Builder()

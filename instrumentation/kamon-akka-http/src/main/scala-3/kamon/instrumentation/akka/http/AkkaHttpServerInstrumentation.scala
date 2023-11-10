@@ -17,8 +17,9 @@ import kanela.agent.api.instrumentation.InstrumentationBuilder
 import kanela.agent.api.instrumentation.mixin.Initializer
 import kanela.agent.libs.net.bytebuddy.implementation.bind.annotation._
 
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{Batchable, ExecutionContext, Future, Promise}
 import scala.util.control.NonFatal
+import scala.annotation.static
 import scala.util.{Failure, Success, Try}
 import java.util.regex.Pattern
 import akka.NotUsed
@@ -31,7 +32,6 @@ import scala.collection.immutable
 
 
 class AkkaHttpServerInstrumentation extends InstrumentationBuilder {
-
   /**
     * When instrumenting bindAndHandle what we do is wrap the Flow[HttpRequest, HttpResponse, NotUsed] provided by
     * the user and add all the processing there. This is the part of the instrumentation that performs Context
@@ -48,8 +48,9 @@ class AkkaHttpServerInstrumentation extends InstrumentationBuilder {
     * For the HTTP/2 instrumentation, since the parts where we can capture the interface/port and the actual flow
     * creation happen at different times we are wrapping the handler with the interface/port data and reading that
     * information when turning the handler function into a flow and wrapping it the same way we would for HTTP/1.
+    *
     */
-  onType("akka.http.scaladsl.Http2Ext")
+  onType("akka.http.impl.engine.http2.Http2Ext")
     .advise(method("bindAndHandleAsync") and isPublic(), classOf[Http2ExtBindAndHandleAdvice])
 
   onType("akka.http.impl.engine.http2.Http2Blueprint$")
@@ -63,27 +64,35 @@ class AkkaHttpServerInstrumentation extends InstrumentationBuilder {
     .mixin(classOf[HasMatchingContext.Mixin])
     .intercept(method("copy"), RequestContextCopyInterceptor)
 
-  onType("akka.http.scaladsl.server.directives.PathDirectives$class")
+  onType("akka.http.scaladsl.server.directives.PathDirectives")
     .intercept(method("rawPathPrefix"), classOf[PathDirectivesRawPathPrefixInterceptor])
 
-  onType("akka.http.scaladsl.server.directives.FutureDirectives$class")
+  onType("akka.http.scaladsl.server.directives.FutureDirectives")
     .intercept(method("onComplete"), classOf[ResolveOperationNameOnRouteInterceptor])
 
   onTypes("akka.http.scaladsl.server.directives.OnSuccessMagnet$", "akka.http.scaladsl.server.directives.CompleteOrRecoverWithMagnet$")
     .intercept(method("apply"), classOf[ResolveOperationNameOnRouteInterceptor])
 
-  onType("akka.http.scaladsl.server.directives.RouteDirectives$class")
+  onType("akka.http.scaladsl.server.directives.RouteDirectives")
     .intercept(method("complete"), classOf[ResolveOperationNameOnRouteInterceptor])
     .intercept(method("redirect"), classOf[ResolveOperationNameOnRouteInterceptor])
     .intercept(method("failWith"), classOf[ResolveOperationNameOnRouteInterceptor])
 
+
+  /**
+    * Akka-http 10.1.x compatibility.
+    */
+
+  onType("akka.http.scaladsl.Http2Ext")
+    .advise(method("bindAndHandleAsync") and isPublic(), classOf[Http2ExtBindAndHandleAdvice])
+
   /**
     * Support for HTTP/1 and HTTP/2 at the same time.
+    *
     */
-@
-  onType("akka.stream.scaladsl.Flow")
-    .advise(method("mapAsync"), classOf[FlowOpsMapAsyncAdvice])
 
+  onType("akka.stream.scaladsl.FlowOps")
+    .advise(method("mapAsync"), classOf[FlowOpsMapAsyncAdvice])
 }
 
 trait HasMatchingContext {
@@ -130,24 +139,24 @@ object ResolveOperationNameOnRouteInterceptor {
   // the operation name before the request gets to the actual handling code (presumably inside of a "complete"
   // directive.
 
-  @static def complete(@Argument(1) m: => ToResponseMarshallable): StandardRoute =
+  def complete(m: => ToResponseMarshallable): StandardRoute =
     StandardRoute(resolveOperationName(_).complete(m))
 
-  @static def complete[T](status: StatusCode, v: => T)(implicit m: ToEntityMarshaller[T]): StandardRoute =
+  def complete[T](status: StatusCode, v: => T)(implicit m: ToEntityMarshaller[T]): StandardRoute =
     StandardRoute(resolveOperationName(_).complete((status, v)))
 
-  @static def complete[T](status: StatusCode, headers: immutable.Seq[HttpHeader], v: => T)(implicit m: ToEntityMarshaller[T]): StandardRoute =
+  def complete[T](status: StatusCode, headers: immutable.Seq[HttpHeader], v: => T)(implicit m: ToEntityMarshaller[T]): StandardRoute =
     complete((status, headers, v))
 
-  @static def redirect(@Argument(1) uri: Uri, @Argument(2) redirectionType: Redirection): StandardRoute =
+  def redirect(uri: Uri, redirectionType: Redirection): StandardRoute =
     StandardRoute(resolveOperationName(_).redirect(uri, redirectionType))
 
-  @static def failWith(@Argument(1) error: Throwable): StandardRoute = {
+  def failWith(error: Throwable): StandardRoute = {
     Kamon.currentSpan().fail(error)
     StandardRoute(resolveOperationName(_).fail(error))
   }
 
-  @static def onComplete[T](@Argument(1) future: => Future[T]): Directive1[Try[T]] =
+  def onComplete[T](future: => Future[T]): Directive1[Try[T]] =
     Directive { inner => ctx =>
       import ctx.executionContext
       resolveOperationName(ctx)
@@ -187,16 +196,16 @@ object ResolveOperationNameOnRouteInterceptor {
 
       if(lastEdit.allowAutomaticChanges) {
         if(currentSpan.operationName() == lastEdit.operationName) {
-        val allMatches = requestContext.asInstanceOf[HasMatchingContext].matchingContext.reverse.map(singleMatch)
-        val operationName = allMatches.mkString("")
+          val allMatches = requestContext.asInstanceOf[HasMatchingContext].matchingContext.reverse.map(singleMatch)
+          val operationName = allMatches.mkString("")
 
-        if(operationName.nonEmpty) {
+          if (operationName.nonEmpty) {
             currentSpan
-            .name(operationName)
-            .takeSamplingDecision()
+              .name(operationName)
+              .takeSamplingDecision()
 
-          lastEdit.operationName = operationName
-        }
+            lastEdit.operationName = operationName
+          }
         } else {
           lastEdit.allowAutomaticChanges = false
         }
@@ -255,11 +264,10 @@ object LastAutomaticOperationNameEdit {
     new LastAutomaticOperationNameEdit(operationName, allowAutomaticChanges)
 }
 
-class RequestContextCopyInterceptor
 object RequestContextCopyInterceptor {
 
   @RuntimeType
-  @static def copy(@This context: RequestContext, @SuperCall copyCall: Callable[RequestContext]): RequestContext = {
+  def copy(@This context: RequestContext, @SuperCall copyCall: Callable[RequestContext]): RequestContext = {
     val copiedRequestContext = copyCall.call()
     copiedRequestContext.asInstanceOf[HasMatchingContext].setMatchingContext(context.asInstanceOf[HasMatchingContext].matchingContext)
     copiedRequestContext
@@ -270,8 +278,8 @@ class PathDirectivesRawPathPrefixInterceptor
 object PathDirectivesRawPathPrefixInterceptor {
   import BasicDirectives._
 
-  @RuntimeType
-  @static def rawPathPrefix[T](@Argument(1) matcher: PathMatcher[T]): Directive[T] = {
+  @static 
+  def rawPathPrefix[T](@Argument(0) matcher: PathMatcher[T]): Directive[T] = {
     implicit val LIsTuple = matcher.ev
 
     extract { ctx =>
@@ -288,7 +296,7 @@ object PathDirectivesRawPathPrefixInterceptor {
       (ctx, matching)
     } flatMap {
       case (ctx, Matched(rest, values)) =>
-        tprovide(values) & mapRequestContext(_ withUnmatchedPath rest) & mapRouteResult { routeResult =>
+        tprovide[T](values) & mapRequestContext(_.withUnmatchedPath(rest)) & mapRouteResult { routeResult =>
 
           if(routeResult.isInstanceOf[Rejected])
             ctx.asInstanceOf[HasMatchingContext].popOneMatchingContext()
